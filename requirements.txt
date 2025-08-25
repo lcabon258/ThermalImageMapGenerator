@@ -2,3 +2,4 @@ numpy
 pillow
 tifffile
 matplotlib
+Jinja2

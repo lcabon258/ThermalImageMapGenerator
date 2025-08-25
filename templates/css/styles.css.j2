@@ -1,0 +1,48 @@
+/* Theme variables (configurable at build time) */
+:root{
+  --viewer-title-bg: {{ viewer_title_bg | default('rgba(255,255,255,0.85)') }};
+  --colorbar-width: {{ colorbar_width | default('46px') }};
+}
+
+/* Layout + components */
+html, body { height: 100%; }
+#map { width: 100%; }
+
+.viewer { overflow: hidden; position: relative; }
+.viewer-title {
+  position:absolute; top:8px; left:12px;
+  background:var(--viewer-title-bg);
+  padding:2px 8px; border-radius:6px;
+  font-weight:600; font-size:0.9rem;
+}
+
+.therm-overlay {
+  position:absolute; right:10%; bottom:10%;
+  background:rgba(0,0,0,0.6); color:white;
+  padding:6px 10px; border-radius:8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.colorbar {
+  position:absolute; left:8px; bottom:8px;
+  background:rgba(255,255,255,0.85);
+  padding:4px; border-radius:8px;
+}
+
+.colorbar img { display:block; width:var(--colorbar-width); height:auto; }
+
+.placeholder {
+  position:absolute; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  color:#777; font-style:italic; user-select:none; pointer-events:none;
+}
+
+.leaflet-container { height: 100%; border-radius: 0.75rem; }
+
+/* Ensure viewer images always fit fully inside their frames */
+.viewer img.fit-contain {
+  width: 100%; height: 100%;
+  max-width: 100%; max-height: 100%;
+  object-fit: contain; object-position: center center;
+  display: block;
+}

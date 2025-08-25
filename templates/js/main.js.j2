@@ -1,0 +1,104 @@
+// Build-time config injected by Jinja2
+const CFG = {
+  renderMin: {{ render_min }},
+  renderMax: {{ render_max }},
+  split: {{ split | tojson }},
+  clusteringOffZoom: {{ clustering_off_zoom }},
+  extraZoomAfterFit: {{ extra_zoom_after_fit }}
+};
+
+let DB = {}; let DN_CACHE = {}; let map, markers; let locked = false;
+
+// --- Layout: keep RGB/Thermal heights in CFG.split proportion of map height
+function syncHeights() {
+  const mapEl = document.getElementById('map');
+  const rgbView = document.getElementById('rgbView');
+  const thermView = document.getElementById('thermView');
+  if (!mapEl || !rgbView || !thermView) return;
+  const rect = mapEl.getBoundingClientRect();
+  const gap = 8; // px between viewers
+  const usable = Math.max(160, rect.height - gap);
+  rgbView.style.height   = `${Math.floor(usable * (CFG.split?.rgb ?? 0.4))}px`;
+  thermView.style.height = `${Math.floor(usable * (CFG.split?.thermal ?? 0.6))}px`;
+}
+
+function setPlaceholders(visible) {
+  document.getElementById('rgbPlaceholder').style.display = visible ? 'flex' : 'none';
+  document.getElementById('thermPlaceholder').style.display = visible ? 'flex' : 'none';
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+  // Load DB + points
+  DB = await fetch('data/db.json').then(r => r.json());
+  const fc = await fetch('data/points.geojson').then(r => r.json());
+
+  // Map & layers
+  map = L.map('map', { zoomControl: true });
+  const osm  = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '&copy; OpenStreetMap'});
+  const esri = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom: 19, attribution: 'Esri'});
+  osm.addTo(map); L.control.layers({'OSM': osm, 'Satellite': esri}, {}).addTo(map);
+
+  // Markers (cluster off at high zoom)
+  markers = L.markerClusterGroup({ disableClusteringAtZoom: CFG.clusteringOffZoom ?? 18 });
+  const colors = {}; const palette = ['red','blue','green','purple','orange','darkred','cadetblue'];
+
+  (fc.features || []).forEach((f) => {
+    const p = f.properties || {}; const c = f.geometry.coordinates; const cam = p.camera || 'camera';
+    if (!(cam in colors)) colors[cam] = palette[Object.keys(colors).length % palette.length];
+    const icon = new L.Icon({
+      iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${colors[cam]}.png`,
+      iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34],
+      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png', shadowSize: [41,41]
+    });
+    const m = L.marker([c[1], c[0]], { icon });
+    const html = `<div class="d-flex align-items-center">
+        <img src="${p.thumb}" width="64" height="64" style="object-fit:cover;border-radius:6px;margin-right:8px;" />
+        <div><div><strong>${cam}</strong></div><div class="small text-muted">${p.datetime || ''}</div><div class="small">ID: ${p.id.slice(0,8)}</div></div></div>`;
+    m.bindPopup(html); m.on('click', () => loadShot(p.id)); markers.addLayer(m);
+  });
+  map.addLayer(markers);
+
+  // Fit to points then zoom in a bit to reduce clustering
+  try {
+    const bounds = L.geoJSON(fc).getBounds();
+    if (bounds.isValid()) { map.fitBounds(bounds.pad(0.1)); map.once('moveend', () => { map.setZoom(map.getZoom() + (CFG.extraZoomAfterFit ?? 1)); }); }
+    else { map.setView([23.5,121], 8); }
+  } catch { map.setView([23.5,121], 8); }
+
+  // Initial layout + placeholders
+  syncHeights(); setPlaceholders(true);
+  setTimeout(() => { map.invalidateSize(); syncHeights(); }, 50);
+  window.addEventListener('resize', () => { map.invalidateSize(); syncHeights(); });
+  map.on('resize', () => { syncHeights(); });
+
+  // Thermal hover/click readout
+  const thermImg = document.getElementById('thermImg'); const overlay = document.getElementById('thermOverlay');
+  thermImg.addEventListener('mousemove', (ev) => { if (!locked) showValueAtEvent(ev, overlay); });
+  thermImg.addEventListener('click', (ev) => { if (!locked) { showValueAtEvent(ev, overlay); locked = true; } else { locked = false; } });
+  thermImg.addEventListener('mouseleave', () => { if (!locked) overlay.textContent = '—'; });
+});
+
+async function loadShot(id) {
+  const rec = DB[id]; if (!rec) return;
+  const rgbImg = document.getElementById('rgbImg'); const thermImg = document.getElementById('thermImg');
+  rgbImg.src = rec.rgb || ''; thermImg.src = rec.thermal_color; thermImg.dataset.id = id;
+  setPlaceholders(false);
+  if (!DN_CACHE[id]) {
+    const buf = await fetch(rec.thermal_dn).then(r => r.arrayBuffer());
+    DN_CACHE[id] = { w: rec.size.w, h: rec.size.h, data: new Float32Array(buf) };
+  }
+}
+
+function showValueAtEvent(ev, overlay) {
+  const img = ev.currentTarget; const id = img.dataset.id;
+  if (!id || !DN_CACHE[id]) { overlay.textContent = '—'; return; }
+  const dn = DN_CACHE[id]; const rect = img.getBoundingClientRect();
+  const xCss = ev.clientX - rect.left; const yCss = ev.clientY - rect.top;
+  const scale   = Math.min(rect.width / dn.w, rect.height / dn.h);
+  const renderW = dn.w * scale; const renderH = dn.h * scale;
+  const xOffset = (rect.width - renderW) / 2; const yOffset = (rect.height - renderH) / 2;
+  const x = Math.floor((xCss - xOffset) / scale); const y = Math.floor((yCss - yOffset) / scale);
+  if (x < 0 || y < 0 || x >= dn.w || y >= dn.h) { overlay.textContent = '—'; return; }
+  const idx = y * dn.w + x; const t = dn.data[idx];
+  overlay.textContent = isFinite(t) ? `${t.toFixed(2)} °C` : '—';
+}

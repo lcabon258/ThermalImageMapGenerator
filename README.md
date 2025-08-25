@@ -1,6 +1,6 @@
 # Thermal Image Map Generator
 
-Build a static, interactive website to explore radiometric thermal images alongside RGB imagery on a map. This script scans a folder of images, converts radiometric TIFFs to Celsius, renders colorized previews, extracts GPS from RGB EXIF for map markers, and outputs a self-contained site using Leaflet and Bootstrap.
+Build a static, interactive website to explore radiometric thermal images alongside RGB imagery on a map. This script scans a folder of images, converts radiometric TIFFs to Celsius, renders colorized previews, extracts GPS from RGB EXIF for map markers, and outputs a self-contained site using Leaflet and Bootstrap. HTML/CSS/JS are rendered from Jinja2 templates in `templates/`.
 
 ## Features
 
@@ -11,16 +11,16 @@ Build a static, interactive website to explore radiometric thermal images alongs
 - Converts sensor DN to temperature (°C): `temp = DN/40 - 100`
 - Colorizes temperatures with a fixed range and colormap (defaults to Turbo)
 - Saves per-pixel temperatures as little-endian Float32 `.bin`
-- Builds a static site with:
+- Builds a static site (from Jinja2 templates) with:
   - Leaflet map + marker clustering
-  - Side-by-side viewers (RGB on top, Thermal below; 40/60 height split)
+  - Side-by-side viewers (RGB on top, Thermal below; 40/60 height split; configurable)
   - Hover to read per-pixel temperature; click to lock/unlock readout
   - Colorbar, thumbnails, and popups with camera/time
 
 ## Requirements
 
 - Python 3.9+
-- Packages: `numpy`, `pillow`, `tifffile`, `matplotlib`
+- Packages: `numpy`, `pillow`, `tifffile`, `matplotlib`, `Jinja2`
 
 Install into a virtual environment (Windows PowerShell):
 
@@ -33,7 +33,7 @@ pip install -r requirements.txt
 If you don't want to use the requirements file:
 
 ```powershell
-pip install numpy pillow tifffile matplotlib
+pip install numpy pillow tifffile matplotlib Jinja2
 ```
 
 ## Usage
@@ -106,6 +106,12 @@ Edit constants near the top of `build_site.py`:
   - `RGB_SUFFIX` (default `-visible.jpg`)
   - `RADIOMETRIC_TIF_SUFFIX` / `RADIOMETRIC_TIFF_SUFFIX`
 
+Templating (Jinja2):
+- Edit HTML layout in `templates/index.html.j2`.
+- Edit map/app logic in `templates/js/main.js.j2`.
+- Edit styles/theme in `templates/css/styles.css.j2`.
+- Build-time variables passed into templates include: `page_title`, `footer_text`, `render_min`, `render_max`, `split` (RGB/Thermal height ratio), `clustering_off_zoom`, and `extra_zoom_after_fit`.
+
 ## How it works (quick overview)
 
 1. Recursively scans `input_root`, grouping files by common stem and known suffixes.
@@ -131,3 +137,4 @@ This project is licensed under the MIT License. See `LICENSE` for details.
 - Bootstrap for layout
 - Matplotlib for color mapping
 - Pillow and tifffile for image I/O
+- Jinja2 for templating
